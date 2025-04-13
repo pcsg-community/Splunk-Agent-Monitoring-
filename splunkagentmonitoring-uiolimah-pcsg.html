@@ -1,0 +1,352 @@
+<form version="1.1" theme="light">
+  <label>Splunk Agent Monitoring</label>
+  <!-- Row 1: Active Forwarders + Forwarders Over Time -->
+  <!-- Row 2: Inactive Forwarders + Host List -->
+  <!-- Row 3: Data Volume + Input Errors -->
+  <!-- Row 4: Restart Events -->
+  <!-- Row 5: 🆕 Newest Agent Hosts Detected -->
+  <!-- Row 6: 🧩 Sysmon Monitoring -->
+  <!-- Row 7: 🧩 UDP, TCP, Syslog Log Asset Monitoring -->
+  <fieldset submitButton="true">
+    <input type="time" token="field1">
+      <label>Time</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <title>🔢 Total Active Forwarders</title>
+      <single>
+        <search>
+          <query>index=_internal sourcetype=splunkd group=tcpin_connections 
+| stats dc(hostname) AS "Active Forwarders"</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </single>
+    </panel>
+    <panel>
+      <title>📅 Forwarders Seen Over Time</title>
+      <chart>
+        <search>
+          <query>index=_internal sourcetype=splunkd group=tcpin_connections
+| timechart span=1h dc(hostname) AS "Forwarders Seen"</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>💀 Forwarders Not Seen in X Days</title>
+      <table>
+        <search>
+          <query>| metadata type=hosts index=* 
+| eval ageInDays = round((now() - lastTime)/86400, 1)
+| where ageInDays &gt; 3
+| table host, ageInDays</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+    <panel>
+      <title>🆕 Newest Agent Hosts Detected</title>
+      <table>
+        <search>
+          <query>| metadata type=hosts index=* 
+| eval firstSeen=strftime(firstTime, "%Y-%m-%d %H:%M:%S")
+| sort - firstTime
+| table host, firstSeen
+| head 20</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+    <panel>
+      <title>📋 Forwarder Hosts List</title>
+      <table>
+        <search>
+          <query>index=_internal sourcetype=splunkd group=tcpin_connections
+| stats latest(_time) AS LastSeen by hostname, sourceIp
+| eval LastSeen=strftime(LastSeen, "%Y-%m-%d %H:%M:%S")
+| sort - LastSeen</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>📊 Data Volume by Host</title>
+      <table>
+        <search>
+          <query>index=* 
+| stats sum(eval(len(_raw)/1024/1024/1024)) AS GB by host
+| sort - GB</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="dataOverlayMode">highlow</option>
+        <option name="rowNumbers">true</option>
+      </table>
+    </panel>
+    <panel>
+      <title>🧠 Search for Misconfigured Inputs</title>
+      <table>
+        <search>
+          <query>index=_internal sourcetype=splunkd ExecProcessor error
+| stats count by host, _raw</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="rowNumbers">true</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>🔁 Restart Events (Splunkd)</title>
+      <chart>
+        <search>
+          <query>index=_internal sourcetype=splunkd "Splunkd starting"
+| stats count by host</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>🟢 Active Sysmon Hosts (Last 5 min)</title>
+      <single>
+        <search>
+          <query>index=sysmon earliest=-5m
+| stats dc(host) AS active_hosts</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </single>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>🔴 Hosts Missing Sysmon Events (Last 24h)</title>
+      <table>
+        <search>
+          <query>| tstats summariesonly=false values(host) AS all_hosts WHERE index=sysmon by host
+| append [ 
+    | metadata type=hosts index=sysmon 
+    | eval last_seen=relative_time(now(), "-24h") 
+    | fields host 
+]
+| stats count by host
+| where count=1</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="dataOverlayMode">highlow</option>
+        <option name="rowNumbers">true</option>
+      </table>
+    </panel>
+    <panel>
+      <title>📋 Hosts Sending Syslog Logs</title>
+      <table>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, source | where match(source, "syslog")</query>
+        </search>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>📅 Sysmon Event Timeline (Top 10 Hosts)</title>
+      <chart>
+        <search>
+          <query>index=sysmon earliest=-24h
+| timechart span=1h count BY host limit=10</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>🔢 Total UDP Log Sources</title>
+      <single>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "Total UDP Log Sources" by source | where match(source, "udp")</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </single>
+    </panel>
+    <panel>
+      <title>📅 UDP Log Sources Over Time</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "UDP Log Sources" by source, _time | where match(source, "udp") | timechart span=1h dc(host) AS "UDP Log Sources"</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>🔢 Total TCP Log Sources</title>
+      <single>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "Total TCP Log Sources" by source | where match(source, "tcp")</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </single>
+    </panel>
+    <panel>
+      <title>📅 TCP Log Sources Over Time</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "TCP Log Sources" by source, _time | where match(source, "tcp") | timechart span=1h dc(host) AS "TCP Log Sources"</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>🔢 Total Syslog Log Sources</title>
+      <single>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "Total Syslog Log Sources" by source | where match(source, "syslog")</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </single>
+    </panel>
+    <panel>
+      <title>📅 Syslog Log Sources Over Time</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats dc(host) AS "Syslog Log Sources" by source, _time | where match(source, "syslog") | timechart span=1h dc(host) AS "Syslog Log Sources"</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>📋 Hosts Sending UDP Logs</title>
+      <table>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, source | where match(source, "udp")</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+    <panel>
+      <title>📋 Hosts Sending TCP Logs</title>
+      <table>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, source | where match(source, "tcp")</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>⏰ UDP Log Time Distribution</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, _time, source | where match(source, "udp") | timechart span=1h count by host</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>⏰ TCP Log Time Distribution</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, _time, source | where match(source, "tcp") | timechart span=1h count by host</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>⏰ Syslog Log Time Distribution</title>
+      <chart>
+        <search>
+          <query>index=* sourcetype=* | stats count by host, _time, source | where match(source, "syslog") | timechart span=1h count by host</query>
+          <earliest>$field1.earliest$</earliest>
+          <latest>$field1.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>🆕 24 H Newest Agent Hosts Detected</title>
+      <table>
+        <search>
+          <query>| metadata type=hosts index=* 
+| eval firstSeen=strftime(firstTime, "%Y-%m-%d %H:%M:%S")
+| where firstTime &gt;= relative_time(now(), "-24h")
+| sort - firstTime
+| table host, firstSeen
+| head 20</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="count">20</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+</form>
